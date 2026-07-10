@@ -75,6 +75,6 @@ Number → quote string. Rounds to the style's resolution first (1/256 eighths, 
 
 ## Author
 
-Built by **[Moshe Malka](https://moshemalka.com)** — engineering leader in New York City; previously built institutional bond-trading systems at ICE and now works on Goldman Sachs' Private Wealth platform. Studio work at [Quentin.Code](https://www.quentin.software/).
+Built by **[Moshe Malka](https://moshemalka.com)** — engineering leader in New York City. Studio work at [Quentin.Code](https://www.quentin.software/).
 
 MIT © Moshe Malka
