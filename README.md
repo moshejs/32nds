@@ -73,6 +73,10 @@ Number → quote string. Rounds to the style's resolution first (1/256 eighths, 
 - [CME Group — Calculating U.S. Treasury Pricing](https://www.cmegroup.com/education/courses/introduction-to-treasuries/calculating-us-treasury-pricing)
 - [CME Group — Treasury Futures Price Rounding Conventions](https://www.cmegroup.com/trading/interest-rates/files/treasury-futures-price-rounding-conventions-2020.pdf)
 
+## Related
+
+Part of a small fixed-income toolkit: [`day-count`](https://github.com/moshejs/day-count) (ISDA conventions) · [`accrued-interest`](https://github.com/moshejs/accrued-interest) · [`sifma-holidays`](https://github.com/moshejs/sifma-holidays) (bond-market calendar) · [`treasurydirect`](https://github.com/moshejs/treasurydirect) (auction data client).
+
 ## Author
 
 Built by **[Moshe Malka](https://moshemalka.com)** — engineering leader in New York City. Studio work at [Quentin.Code](https://www.quentin.software/).
