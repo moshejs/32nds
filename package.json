@@ -1,6 +1,6 @@
 {
   "name": "32nds",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "US Treasury price math — parse and format 32nds quotes (105-16+), ticks, and basis points. Zero dependencies, exact IEEE 754 arithmetic.",
   "keywords": [
     "treasury",
