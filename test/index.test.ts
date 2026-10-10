@@ -58,6 +58,21 @@ describe("parsePrice", () => {
     expect(parsePrice("110'16+", { style: "cme" })).toBe(110.515625);
   });
 
+  it("parses CME eighth-of-a-32nd digits (2-year note futures, ZT)", () => {
+    // CME: the digit is the fraction of a 32nd truncated to tenths
+    expect(parsePrice("104'161", { style: "cme" })).toBe(104 + 16.125 / 32);
+    expect(parsePrice("104'163", { style: "cme" })).toBe(104 + 16.375 / 32);
+    expect(parsePrice("104'166", { style: "cme" })).toBe(104 + 16.625 / 32);
+    expect(parsePrice("104'168", { style: "cme" })).toBe(104 + 16.875 / 32);
+  });
+
+  it("parses ASCII fractions of a 32nd", () => {
+    expect(parsePrice("99-16 1/4")).toBe(99 + 16.25 / 32);
+    expect(parsePrice("99-16 3/4")).toBe(parsePrice("99-16¾"));
+    expect(parsePrice("99-16 1/2")).toBe(parsePrice("99-16+"));
+    expect(parsePrice("99-16 7/8")).toBe(parsePrice("99-167"));
+  });
+
   it("accepts -, ', and : separators, with whitespace", () => {
     expect(parsePrice("105'16")).toBe(105.5);
     expect(parsePrice("105:16")).toBe(105.5);
@@ -74,7 +89,9 @@ describe("parsePrice", () => {
     expect(() => parsePrice("105.16")).toThrow(RangeError); // '.' is not a separator
     expect(() => parsePrice("105-168")).toThrow(RangeError); // eighth digit > 7
     expect(() => parsePrice("105-16++")).toThrow(RangeError);
-    expect(() => parsePrice("105'163", { style: "cme" })).toThrow(RangeError); // not 0/2/5/7
+    expect(() => parsePrice("105'164", { style: "cme" })).toThrow(RangeError); // 4 is never a CME digit
+    expect(() => parsePrice("105'169", { style: "cme" })).toThrow(RangeError);
+    expect(() => parsePrice("105-16 5/4")).toThrow(RangeError);
     expect(() => parsePrice("abc")).toThrow(RangeError);
     expect(() => parsePrice("105")).toThrow(RangeError); // bare number: use Number()
   });
@@ -121,11 +138,27 @@ describe("formatPrice", () => {
     }
   });
 
-  it("round-trips every 1/128 increment in CME style", () => {
-    for (let i = 0; i < 128; i++) {
-      const price = 110 + i / 128;
+  it("round-trips every 1/256 increment in CME style", () => {
+    for (let i = -512; i < 512; i++) {
+      const price = 110 + i / 256;
       expect(parsePrice(formatPrice(price, { style: "cme" }), { style: "cme" })).toBe(price);
     }
+    expect(formatPrice(104 + 16.125 / 32, { style: "cme" })).toBe("104'161");
+    expect(formatPrice(104 + 16.875 / 32, { style: "cme" })).toBe("104'168");
+  });
+
+  it("round-trips negative values (price changes)", () => {
+    for (let i = -600; i <= 600; i++) {
+      const v = i / 256;
+      expect(parsePrice(formatPrice(v))).toBe(v);
+      expect(parsePrice(formatPrice(v, { style: "cme" }), { style: "cme" })).toBe(v);
+    }
+  });
+
+  it("never renders a negative zero", () => {
+    expect(formatPrice(-0.001)).toBe("0-00"); // was "-0-00"
+    expect(formatPrice(-0.001, { style: "cme" })).toBe("0'000");
+    expect(formatPrice(-0)).toBe("0-00");
   });
 });
 
@@ -135,6 +168,13 @@ describe("ticks, bps, and dollar values", () => {
     expect(ticksBetween(99.75, 99.5)).toBe(-8);
     expect(ticksBetween(110.5, 110.515625, HALF_32ND)).toBe(1);
     expect(ticksBetween(110.5, 110.5078125, QUARTER_32ND)).toBe(1);
+  });
+
+  it("rounds halfway values away from zero, symmetrically", () => {
+    expect(roundToTick(99.515625)).toBe(99.53125);
+    expect(roundToTick(-99.515625)).toBe(-99.53125); // was -99.5
+    expect(ticksBetween(0, -1 / 64)).toBe(-1);
+    expect(ticksBetween(0, 1 / 64)).toBe(1);
   });
 
   it("rounds to tick", () => {

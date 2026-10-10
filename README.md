@@ -34,21 +34,25 @@ A nice property: Treasury fractions are dyadic rationals (powers of two), so eve
 | `105-16` | 105 + 16/32 | 105.50 |
 | `105-16+` | + half a 32nd (1/64) | 105.515625 |
 | `104-072` | trailing digit = eighths of a 32nd (cash market) | 104.2265625 |
-| `105-16½` | unicode fractions accepted | 105.515625 |
+| `105-16½`, `105-16 1/2` | unicode or ASCII fractions of a 32nd | 105.515625 |
+| `105-16.25` | explicit decimal 32nds | 105.5078125 |
 | `110'165` | CME futures: 2/5/7 = ¼/½/¾ of a 32nd | 110.515625 |
+| `104'166` | CME 2-year note (ZT): 1/3/6/8 = ⅛/⅜/⅝/⅞ of a 32nd | 104.51953125 |
 | `-0-08+` | signed quotes (price changes) | −0.265625 |
 
 Separators `-`, `'`, and `:` are accepted. A decimal point is deliberately **not** a separator: `parsePrice("105.16")` throws instead of silently reading 16/32 — decimals are already numbers.
+
+The same trailing digit means different things in the two notations: cash `105-165` is 16⅝/32, CME `105'165` is 16½/32. CME's digit is the fraction of a 32nd truncated to tenths (⅛ = .125 → 1, ⅝ = .625 → 6), so it is never 4 or 9; the eighths digits 1/3/6/8 are used by 2-year note futures, whose tick has been ⅛ of a 32nd since January 2019.
 
 ## API
 
 ### `parsePrice(quote, opts?) → number`
 
-Quote string → percent-of-par number. `opts.style`: `"eighths"` (default, cash-market: trailing digit 0–7 is eighths of a 32nd) or `"cme"` (futures: 0/2/5/7 = 0/¼/½/¾). Throws `RangeError` on malformed input, 32nds ≥ 32, or invalid fraction digits.
+Quote string → percent-of-par number. `opts.style`: `"eighths"` (default, cash-market: trailing digit 0–7 is eighths of a 32nd) or `"cme"` (futures: 0/1/2/3/5/6/7/8 = 0/⅛/¼/⅜/½/⅝/¾/⅞). Throws `RangeError` on malformed input, 32nds ≥ 32, or invalid fraction digits.
 
 ### `formatPrice(price, opts?) → string`
 
-Number → quote string. Rounds to the style's resolution first (1/256 eighths, 1/128 cme).
+Number → quote string. Rounds to 1/256 (an eighth of a 32nd) first, halfway values away from zero; a negative value that rounds to zero prints as `0-00`.
 
 - `style` — `"eighths"` (default) or `"cme"` (always renders the fraction digit, like Globex: `110'160`)
 - `sep` — separator; defaults `"-"` (eighths) / `"'"` (cme)
@@ -58,7 +62,7 @@ Number → quote string. Rounds to the style's resolution first (1/256 eighths, 
 ### Ticks and values
 
 - `ticksBetween(from, to, tick?)` — signed tick count between two prices (default tick 1/32)
-- `roundToTick(price, tick?)` — snap a price to the nearest tick
+- `roundToTick(price, tick?)` — snap a price to the nearest tick (halfway values away from zero)
 - `change32nds(from, to)` — a move expressed in 32nds
 - `toBps(decimal)` / `fromBps(bps)` — basis-point conversion (`toBps(0.0025)` → 25)
 - `dollarValue(price, face)` — dollar value of a price on a face amount
@@ -66,12 +70,13 @@ Number → quote string. Rounds to the style's resolution first (1/256 eighths, 
 
 ### Tick constants
 
-`THIRTY_SECOND` (1/32, cash tick), `HALF_32ND` (1/64, ZN futures), `QUARTER_32ND` (1/128, ZF/ZT futures), `EIGHTH_32ND` (1/256, cash quote resolution).
+`THIRTY_SECOND` (1/32, cash tick), `HALF_32ND` (1/64, ZN futures), `QUARTER_32ND` (1/128, ZF/Z3N futures), `EIGHTH_32ND` (1/256, cash quote resolution and the ZT futures tick since 2019).
 
 ## References
 
 - [CME Group — Calculating U.S. Treasury Pricing](https://www.cmegroup.com/education/courses/introduction-to-treasuries/calculating-us-treasury-pricing)
 - [CME Group — Treasury Futures Price Rounding Conventions](https://www.cmegroup.com/trading/interest-rates/files/treasury-futures-price-rounding-conventions-2020.pdf)
+- [CME Clearing Advisory 18-192 — Tick Reduction for CBOT Two-Year Note Futures](https://www.cmegroup.com/notices/clearing/2018/05/Chadv18-192.html)
 
 ## Related
 
