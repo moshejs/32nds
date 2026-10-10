@@ -13,8 +13,10 @@ export interface ParseOptions {
    * How to read a trailing digit after the 32nds.
    * - `"eighths"` (default, cash-market convention): digit 0–7 is eighths of
    *   a 32nd, so `104-072` = 104 + 7.25/32.
-   * - `"cme"` (futures display): 2/5/7 mean ¼/½/¾ of a 32nd, so
-   *   `110'165` = 110 + 16.5/32.
+   * - `"cme"` (futures display): the digit is the fraction of a 32nd
+   *   truncated to tenths — 2/5/7 = ¼/½/¾, and for 2-year note futures (ZT,
+   *   tick ⅛ of a 32nd since January 2019) 1/3/6/8 = ⅛/⅜/⅝/⅞ — so
+   *   `110'165` = 110 + 16.5/32 and `110'166` = 110 + 16.625/32.
    */
   style?: QuoteStyle;
 }
@@ -34,9 +36,12 @@ export interface FormatOptions {
 export const THIRTY_SECOND = 1 / 32;
 /** Half a 32nd (1/64) — the 10-year note futures (ZN) tick. */
 export const HALF_32ND = 1 / 64;
-/** A quarter of a 32nd (1/128) — the 2- and 5-year futures (ZT/ZF) tick. */
+/** A quarter of a 32nd (1/128) — the 5- and 3-year note futures (ZF/Z3N) tick. */
 export const QUARTER_32ND = 1 / 128;
-/** An eighth of a 32nd (1/256) — the finest cash-market quote resolution. */
+/**
+ * An eighth of a 32nd (1/256) — the finest cash-market quote resolution, and
+ * the 2-year note futures (ZT) tick since January 2019.
+ */
 export const EIGHTH_32ND = 1 / 256;
 
 const EIGHTH_GLYPHS: Record<string, number> = {
@@ -49,8 +54,19 @@ const EIGHTH_GLYPHS: Record<string, number> = {
   "⅞": 7,
 };
 
-const CME_DIGIT_TO_EIGHTHS: Record<string, number> = { "0": 0, "2": 2, "5": 4, "7": 6 };
-const EIGHTHS_TO_CME_DIGIT: Record<number, string> = { 0: "0", 2: "2", 4: "5", 6: "7" };
+// CME's final digit is the fraction of a 32nd truncated to tenths:
+// ⅛ = .125 → 1, ¼ → 2, ⅜ → 3, ½ → 5, ⅝ → 6, ¾ → 7, ⅞ → 8. (Never 4 or 9.)
+const CME_DIGIT_TO_EIGHTHS: Record<string, number> = {
+  "0": 0,
+  "1": 1,
+  "2": 2,
+  "3": 3,
+  "5": 4,
+  "6": 5,
+  "7": 6,
+  "8": 7,
+};
+const EIGHTHS_TO_CME_DIGIT = ["0", "1", "2", "3", "5", "6", "7", "8"] as const;
 
 const QUOTE_RE = /^([+-]?)(\d+)\s*[-':]\s*(\d{1,2})(.*)$/;
 
@@ -62,6 +78,7 @@ const QUOTE_RE = /^([+-]?)(\d+)\s*[-':]\s*(\d{1,2})(.*)$/;
  * parsePrice("105-16+")  // 105.515625
  * parsePrice("104-072")  // 104.2265625   (7.25/32nds)
  * parsePrice("105-16½")  // 105.515625
+ * parsePrice("105-16 1/4") // 105.5078125
  * parsePrice("110'165", { style: "cme" }) // 110.515625
  * parsePrice("-0-08+")   // -0.265625     (a price change)
  * ```
@@ -85,19 +102,27 @@ export function parsePrice(quote: string, opts: ParseOptions = {}): number {
     eighths = 4;
   } else if (rest in EIGHTH_GLYPHS) {
     eighths = EIGHTH_GLYPHS[rest] as number;
+  } else if (/^[1-7]\/(2|4|8)$/.test(rest)) {
+    // ASCII fraction of a 32nd, e.g. "99-16 3/4"
+    const [num, den] = rest.split("/").map(Number) as [number, number];
+    if (num >= den) throw new RangeError(`Invalid fraction "${rest}" in quote "${quote}"`);
+    eighths = (num * 8) / den;
   } else if (/^\.\d+$/.test(rest)) {
     // Explicit fractional 32nds, e.g. "105-16.25"
     eighths = Number(`0${rest}`) * 8;
-  } else if (/^[0-7]$/.test(rest)) {
+  } else if (/^\d$/.test(rest)) {
     if (style === "cme") {
       const e = CME_DIGIT_TO_EIGHTHS[rest];
       if (e === undefined) {
         throw new RangeError(
-          `Invalid CME fraction digit "${rest}" in "${quote}" (expected 0, 2, 5, or 7)`,
+          `Invalid CME fraction digit "${rest}" in "${quote}" (expected 0, 1, 2, 3, 5, 6, 7, or 8)`,
         );
       }
       eighths = e;
     } else {
+      if (rest > "7") {
+        throw new RangeError(`Eighths digit must be 0–7 in "${quote}", got ${rest}`);
+      }
       eighths = Number(rest);
     }
   } else {
@@ -118,9 +143,9 @@ export function parsePrice(quote: string, opts: ParseOptions = {}): number {
  * formatPrice(105.515625, { plus: false })  // "105-164"
  * ```
  *
- * Values are rounded to the style's resolution first (1/256 for eighths,
- * 1/128 for cme). CME style always renders the fraction digit (`110'160`),
- * matching Globex displays.
+ * Values are rounded to 1/256 (an eighth of a 32nd) first, half away from
+ * zero. CME style always renders the fraction digit (`110'160`), matching
+ * Globex displays.
  */
 export function formatPrice(price: number, opts: FormatOptions = {}): string {
   if (!Number.isFinite(price)) {
@@ -131,14 +156,13 @@ export function formatPrice(price: number, opts: FormatOptions = {}): string {
   const plus = opts.plus ?? true;
   const pad = opts.pad ?? true;
 
-  const unitsPerPoint = style === "cme" ? 128 : 256;
-  const neg = price < 0;
-  let units = Math.round(Math.abs(price) * unitsPerPoint);
-  const handle = Math.floor(units / unitsPerPoint);
-  units -= handle * unitsPerPoint;
-  const unitsPer32 = unitsPerPoint / 32;
-  const t32 = Math.floor(units / unitsPer32);
-  const eighths = (units - t32 * unitsPer32) * (style === "cme" ? 2 : 1);
+  let units = Math.round(Math.abs(price) * 256);
+  // A negative value that rounds to zero is formatted as "0-00", not "-0-00"
+  const neg = price < 0 && units > 0;
+  const handle = Math.floor(units / 256);
+  units -= handle * 256;
+  const t32 = Math.floor(units / 8);
+  const eighths = units - t32 * 8;
 
   let tail: string;
   if (style === "cme") {
@@ -164,12 +188,20 @@ export function formatPrice(price: number, opts: FormatOptions = {}): string {
  * ```
  */
 export function ticksBetween(from: number, to: number, tick: number = THIRTY_SECOND): number {
-  return Math.round((to - from) / tick);
+  return roundHalfAway((to - from) / tick);
 }
 
-/** Round a price to the nearest tick (default 1/32). */
+/**
+ * Round a price to the nearest tick (default 1/32). Halfway values round
+ * away from zero, so negative changes mirror positive ones.
+ */
 export function roundToTick(price: number, tick: number = THIRTY_SECOND): number {
-  return Math.round(price / tick) * tick;
+  return roundHalfAway(price / tick) * tick;
+}
+
+function roundHalfAway(x: number): number {
+  const r = Math.round(Math.abs(x));
+  return x < 0 ? -r : r;
 }
 
 /** Price move expressed in 32nds: `change32nds(99.5, 99.75)` → 8. */
